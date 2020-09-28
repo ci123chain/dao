@@ -16,13 +16,11 @@ const TOKEN_APP_NAME: &str = "token_app";
 const FINANCE_APP_NAME: &str = "finance_app";
 
 //base app code hash;
-const ACL_APP_CODE_HASH: &str = "";
-const VOTING_APP_CODE_HASH: &str = "";
-const TOKEN_APP_CODE_HASH: &str = "";
+const ACL_APP_CODE_HASH: &str = "383E2CC4418EFA8267DEBF2C7DFB5B5F";
+const VOTING_APP_CODE_HASH: &str = "DB1E876AAFF6BAB1E26AB74C78F9FCCA";
+const TOKEN_APP_CODE_HASH: &str = "AC9E85E82AF422099CECB9D203CB4638";
 const FINANCE_APP_CODE_HASH: &str = "";
 
-//
-const INIT_METHOD: &str = "init";
 
 //acl method;
 const CREATE_PERMISSION_METHOD: &str = "create_permission";
@@ -55,7 +53,7 @@ struct AllContracts {
     default_permissions: HashMap<String, Vec<AllPermission>>
 }
 //permission settings
-//init all contracts;
+//all contracts that you want to install;
 impl AllContracts {
     pub fn new() -> AllContracts {
         let mut all = AllContracts::default();
@@ -84,14 +82,14 @@ impl AllContracts {
         token_per.what = TOKEN_APP_NAME.to_string();
         token_per.action = TOKEN_MINT_PERMISSION.to_string();
         token_per.manager = VOTING_APP_NAME.to_string();
-        all_token_per.insert(0, token_per);
+        all_token_per.push(token_per);
 
         let mut token_second_per = AllPermission::default();
         token_second_per.who = VOTING_APP_NAME.to_string();
         token_second_per.what = TOKEN_APP_NAME.to_string();
         token_second_per.action = TOKEN_BURN_PERMISSION.to_string();
         token_second_per.manager = VOTING_APP_NAME.to_string();
-        all_token_per.insert(1, token_second_per);
+        all_token_per.push(token_second_per);
 
         //default per list
         let mut default_permissions_list: HashMap<String, Vec<AllPermission>> = HashMap::default();
@@ -114,10 +112,15 @@ struct Params {
     init_apps: Vec<ContractArgs>
 }
 
+#[derive(Serialize, Deserialize, Default)]
+struct CallParams {
+    method: String,
+    args: Vec<String>
+}
+
 
 #[no_mangle]
 pub fn create_dao(args: &str) -> (bool, Vec<u8>) {
-
     let (ok, result) = install_base_app(args);
     return (ok, result)
 }
@@ -130,17 +133,24 @@ fn install_base_app(apps_args: &str) -> (bool, Vec<u8>) {
     let _community_app_address = _contract_address();
     all_installed_apps.insert(COMMUNITY_APP_NAME.to_string(), _community_app_address.to_string());
     let all_per_list = AllContracts::new();
-    //install acl app.
-    let _acl_app_address = new(ACL_APP_CODE_HASH);
+    
     //set acl permission;
-    let mut acl_sink = Sink::new(0);
-    acl_sink.write_str(INIT_METHOD);
-    acl_sink.write_str(&_community_app_address.to_string());
-    let acl_input = acl_sink.into();
+    let mut a = CallParams::default();
+    //a.method = "init".to_string();
+    a.args.insert(0, _community_app_address.to_string());
+    let acl_input = serde_json::to_vec(&a).unwrap();
+    //let mut acl_sink = Sink::new(0);
+    //acl_sink.write_str(INIT_METHOD);
+    //acl_sink.write_str(&(_community_app_address.to_string()));
+    //let acl_input = acl_sink.into();
+    //install acl app.
+    let _acl_app_address = new(ACL_APP_CODE_HASH.as_bytes(), acl_input);
+    /*
     let ok = call_contract(&_acl_app_address, &acl_input);
     if !ok {
         return (false, result);
     }
+    */
     all_installed_apps.insert(ACL_APP_NAME.to_string(), _acl_app_address.to_string());
     //install base app and initiate.
     let args: Result<Params, Error> = serde_json::from_str(apps_args);
@@ -156,25 +166,60 @@ fn install_base_app(apps_args: &str) -> (bool, Vec<u8>) {
             //all_params = params::Clone();
             let contracts = &params.init_apps;
             for app in contracts {
-                let app_address = new(&(app.app_name));
-                let mut sink = Sink::new(0);
-                sink.write_str(INIT_METHOD);
+                let mut c = CallParams::default();
+                c.args.push(_acl_app_address.to_string());
+                c.args.push(_community_app_address.to_string());
+                //let mut sink = Sink::new(0);
                 for i in &app.init_args {
-                    sink.write_str(&i);
+                    //sink.write_str(&_acl_app_address.to_string());
+                    //sink.write_str(&(_community_app_address.to_string()));
+                    //sink.write_str(&i);
+                    let v = i.clone();
+                    c.args.push(v);
                 }
-                let input = sink.into();
+                let input = serde_json::to_vec(&c).unwrap();//sink.into();
+                let app_hash_str = all_per_list.default_contracts.get(&app.app_name);
+                let app_hash;
+                match app_hash_str {
+                    None => {
+                        let ret = &(app.app_name.to_owned() + "not include in dao yet");
+                        return_contract(Err(ret));
+                        return (false, result);
+                    }
+                    Some(value) => {
+                        app_hash = value;
+                    }
+                }
+                let app_address = new(app_hash.as_bytes(), input);
+                /*
                 let ok = call_contract(&app_address, &input);
                 if !ok {
                     return (false, result);
                 }
+                */
                 all_installed_apps.insert(app.app_name.clone(), app_address.to_string());
             }
         }
     }
     //set base permission.
+    //return all installed apps map.
+    let ret = serde_json::to_vec(&all_installed_apps).unwrap();
+    if params.init_apps.len() == 0 {
+        return (true, ret);
+    }
     for app in &params.init_apps {
         let app_name = &app.app_name;
-        let acl_per_list = all_per_list.default_permissions.get(app_name).unwrap();
+        let acl_per_list;
+        let acl_per_list_op = all_per_list.default_permissions.get(app_name);
+        match acl_per_list_op {
+            None => {
+                //do nothing
+                continue;
+            }
+            Some(value) => {
+                acl_per_list = value
+            }
+        }
         for v in acl_per_list {
             let who;
             let what;
@@ -183,7 +228,8 @@ fn install_base_app(apps_args: &str) -> (bool, Vec<u8>) {
             let who_option = all_installed_apps.get(&*v.who);
             match who_option {
                 None => {
-                    return_contract(Err("the app not installed yet"));
+                    let ret = &(app_name.to_owned() + "not installed yet");
+                    return_contract(Err(ret));
                     return (false, result);
                 }
                 Some(value) => {
@@ -193,7 +239,8 @@ fn install_base_app(apps_args: &str) -> (bool, Vec<u8>) {
             let what_option = all_installed_apps.get(&*v.what);
             match what_option{
                 None => {
-                    return_contract(Err("the app not installed yet"));
+                    let ret = &(app_name.to_owned() + "not installed yet");
+                    return_contract(Err(ret));
                     return (false, result);
                 }
                 Some(value) => {
@@ -203,7 +250,8 @@ fn install_base_app(apps_args: &str) -> (bool, Vec<u8>) {
             let manager_option = all_installed_apps.get(&*v.manager);
             match manager_option {
                 None => {
-                    return_contract(Err("the app not installed yet"));
+                    let ret = &(app_name.to_owned() + "not installed yet");
+                    return_contract(Err(ret));
                     return (false, result);
                 }
                 Some(value) => {
@@ -218,15 +266,16 @@ fn install_base_app(apps_args: &str) -> (bool, Vec<u8>) {
         }
     }
     //return all installed apps map.
-    let ret = serde_json::to_vec(&all_installed_apps).unwrap();
+    //let ret = serde_json::to_vec(&all_installed_apps).unwrap();
     return (true, ret)
 }
 
-fn new(hash:&str) -> Address {
+fn new(hash:&[u8], args: Vec<u8>) -> Address {
     //调用go的方法，获得地址
-    return runtime::make_dependencies().api.new_contract(hash.as_bytes());
+    return runtime::make_dependencies().api.new_contract(hash, &args);
 }
 
+/*
 fn call_contract (app: &Address, args: &[u8]) -> bool {
     //
     let deps = runtime::make_dependencies();
@@ -249,6 +298,7 @@ fn call_contract (app: &Address, args: &[u8]) -> bool {
         }
     }
 }
+*/
 
 fn set_permission(acl: &Address, who: &str, what: &str, action: &str, manager: &str) -> bool {
     let deps = runtime::make_dependencies();
@@ -267,6 +317,9 @@ fn set_permission(acl: &Address, who: &str, what: &str, action: &str, manager: &
                     let result = &(*response);
                     match result {
                         "Success" => {
+                            return true;
+                        }
+                        "success" => {
                             return true;
                         }
                         _ => {
