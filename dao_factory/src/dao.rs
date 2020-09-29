@@ -162,7 +162,7 @@ fn install_base_app(apps_args: &str) -> (bool, Vec<u8>) {
                 let app_hash;
                 match app_hash_str {
                     None => {
-                        let ret = &(app.app_name.to_owned() + "not include in dao yet");
+                        let ret = &(app.app_name.to_owned() + "---get hash failed, this app not include in dao yet");
                         return_contract(Err(ret));
                         return (false, result);
                     }
