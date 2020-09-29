@@ -17,8 +17,8 @@ const FINANCE_APP_NAME: &str = "finance_app";
 
 //base app code hash;
 const ACL_APP_CODE_HASH: &str = "383E2CC4418EFA8267DEBF2C7DFB5B5F";
-const VOTING_APP_CODE_HASH: &str = "DB1E876AAFF6BAB1E26AB74C78F9FCCA";
-const TOKEN_APP_CODE_HASH: &str = "AC9E85E82AF422099CECB9D203CB4638";
+const VOTING_APP_CODE_HASH: &str = "36BE31B2EC1BEBD647B22374B210C73C";
+const TOKEN_APP_CODE_HASH: &str = "FFD30DCCAC0818919276F08BB6546AD1";
 const FINANCE_APP_CODE_HASH: &str = "";
 
 
@@ -55,7 +55,7 @@ struct AllContracts {
 //permission settings
 //all contracts that you want to install;
 impl AllContracts {
-    pub fn new() -> AllContracts {
+    fn new() -> AllContracts {
         let mut all = AllContracts::default();
         //
         let mut default_contracts: HashMap<String, String> = HashMap::default();
@@ -72,8 +72,7 @@ impl AllContracts {
         acl_per.what = ACL_APP_NAME.to_string();
         acl_per.action = ACL_CREATE_PER_PERMISSION.to_string();
         acl_per.manager = COMMUNITY_APP_NAME.to_string();
-        
-        all_acl_per.insert(0, acl_per);
+        all_acl_per.push(acl_per);
 
         //all_token
         let mut all_token_per: Vec<AllPermission> = Vec::default();
@@ -126,7 +125,6 @@ pub fn create_dao(args: &str) -> (bool, Vec<u8>) {
 }
 
 fn install_base_app(apps_args: &str) -> (bool, Vec<u8>) {
-
     let result: Vec<u8> = Vec::new();
     let mut all_installed_apps: HashMap<String, String> = HashMap::new();
     //get template contract address
@@ -136,44 +134,26 @@ fn install_base_app(apps_args: &str) -> (bool, Vec<u8>) {
     
     //set acl permission;
     let mut a = CallParams::default();
-    //a.method = "init".to_string();
     a.args.insert(0, _community_app_address.to_string());
     let acl_input = serde_json::to_vec(&a).unwrap();
-    //let mut acl_sink = Sink::new(0);
-    //acl_sink.write_str(INIT_METHOD);
-    //acl_sink.write_str(&(_community_app_address.to_string()));
-    //let acl_input = acl_sink.into();
-    //install acl app.
     let _acl_app_address = new(ACL_APP_CODE_HASH.as_bytes(), acl_input);
-    /*
-    let ok = call_contract(&_acl_app_address, &acl_input);
-    if !ok {
-        return (false, result);
-    }
-    */
     all_installed_apps.insert(ACL_APP_NAME.to_string(), _acl_app_address.to_string());
     //install base app and initiate.
     let args: Result<Params, Error> = serde_json::from_str(apps_args);
     let params: Params;
     match args {
         Err(_) => {
-            //
             return_contract(Err("invalid apps args"));
             return (false, result);
         }
         _ => {
             params= args.unwrap();
-            //all_params = params::Clone();
             let contracts = &params.init_apps;
             for app in contracts {
                 let mut c = CallParams::default();
                 c.args.push(_acl_app_address.to_string());
                 c.args.push(_community_app_address.to_string());
-                //let mut sink = Sink::new(0);
                 for i in &app.init_args {
-                    //sink.write_str(&_acl_app_address.to_string());
-                    //sink.write_str(&(_community_app_address.to_string()));
-                    //sink.write_str(&i);
                     let v = i.clone();
                     c.args.push(v);
                 }
@@ -191,12 +171,7 @@ fn install_base_app(apps_args: &str) -> (bool, Vec<u8>) {
                     }
                 }
                 let app_address = new(app_hash.as_bytes(), input);
-                /*
-                let ok = call_contract(&app_address, &input);
-                if !ok {
-                    return (false, result);
-                }
-                */
+                
                 all_installed_apps.insert(app.app_name.clone(), app_address.to_string());
             }
         }
@@ -265,8 +240,7 @@ fn install_base_app(apps_args: &str) -> (bool, Vec<u8>) {
             }
         }
     }
-    //return all installed apps map.
-    //let ret = serde_json::to_vec(&all_installed_apps).unwrap();
+
     return (true, ret)
 }
 
@@ -275,30 +249,6 @@ fn new(hash:&[u8], args: Vec<u8>) -> Address {
     return runtime::make_dependencies().api.new_contract(hash, &args);
 }
 
-/*
-fn call_contract (app: &Address, args: &[u8]) -> bool {
-    //
-    let deps = runtime::make_dependencies();
-    match deps.api.call_contract(app, args) {
-        Some(res) => {
-            let ret = String::from_utf8(res).unwrap();
-            match &*ret {
-                "Success" => {
-                    return true
-                }
-                _ => {
-                    return_contract(Err(&ret));
-                    return false
-                }
-            }
-        }
-        None => {
-            return_contract(Err("call contract error, return none"));
-            return false
-        }
-    }
-}
-*/
 
 fn set_permission(acl: &Address, who: &str, what: &str, action: &str, manager: &str) -> bool {
     let deps = runtime::make_dependencies();
@@ -316,9 +266,6 @@ fn set_permission(acl: &Address, who: &str, what: &str, action: &str, manager: &
                 Ok(response) => {
                     let result = &(*response);
                     match result {
-                        "Success" => {
-                            return true;
-                        }
                         "success" => {
                             return true;
                         }
